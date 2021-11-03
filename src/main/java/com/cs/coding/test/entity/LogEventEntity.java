@@ -5,7 +5,7 @@ import java.util.Objects;
 
 @Entity
 @Table(name = "LogEvent")
-public class LogEvent {
+public class LogEventEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
@@ -79,7 +79,7 @@ public class LogEvent {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        LogEvent logEvent = (LogEvent) o;
+        LogEventEntity logEvent = (LogEventEntity) o;
         return id == logEvent.id && Objects.equals(eventId, logEvent.eventId) && Objects.equals(eventDuration, logEvent.eventDuration) && Objects.equals(eventType, logEvent.eventType) && Objects.equals(eventHost, logEvent.eventHost) && Objects.equals(eventAlert, logEvent.eventAlert);
     }
 

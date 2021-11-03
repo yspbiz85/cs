@@ -19,8 +19,7 @@ public class CsApplication implements CommandLineRunner {
 	@Override
 	public void run(String... args) throws Exception {
 		if(args.length > 0){
-			//logFileParser.parseFile(args[0]);
-			logFileParser.findAllContent();
+			logFileParser.parseFile(args[0]);
 		}
 	}
 }
