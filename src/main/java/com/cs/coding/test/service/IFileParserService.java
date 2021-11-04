@@ -1,5 +1,5 @@
 package com.cs.coding.test.service;
 
-public interface FileParser {
+public interface IFileParserService {
     public void parseFile(String args);
 }
