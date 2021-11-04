@@ -28,7 +28,7 @@ public class LogFileParserController {
             int choice = scanner.nextInt();
             switch(choice){
                 case 1:
-                    System.out.println("Enter the path to log file:: ");
+                    System.out.println("Enter the absolute path to log file:: ");
                     String path = scanner.next();
                     logFileParserService.parseFile(path);
                     break;

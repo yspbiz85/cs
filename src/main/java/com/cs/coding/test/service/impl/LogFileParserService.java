@@ -15,10 +15,12 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -120,11 +122,9 @@ public class LogFileParserService implements IFileParserService {
         } catch (InterruptedException interruptedException) {
             logger.error("InterruptedException : {}",interruptedException.getMessage());
         }
-        logger.info("============================\\n\\n");
         logger.info("File Path : {} ",path);
         logger.info("File size : {} ",fileSize);
         logger.info("Total time required to parse : {}",System.nanoTime() - startTime);
-        logger.info("\\n\\n============================");
     }
 
     public void finaAllEventData(){
@@ -144,12 +144,14 @@ public class LogFileParserService implements IFileParserService {
     private void printLogEventData(Object data) {
         try {
             ObjectMapper mapper = new ObjectMapper();
-            String jsonData = mapper.writeValueAsString(data);
-            logger.info("============================\\n\\n");
-            logger.info(jsonData);
-            logger.info("\\n\\n============================");
+            String jsonData = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data);
+            final String filename = UUID.randomUUID().toString().replace("-", "")+".txt";
+            logger.info("Output data written to file : {}",filename);
+            Files.write(Paths.get(filename),jsonData.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException jsonProcessingException) {
             logger.error("JsonProcessingException : {}",jsonProcessingException.getMessage());
+        } catch (IOException ioException) {
+            logger.error("IOException : {}",ioException.getMessage());
         } catch (Exception exception) {
             logger.error("Internal Error : {}",exception.getMessage());
         }
