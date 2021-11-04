@@ -129,6 +129,7 @@ public class LogFileParserService implements IFileParserService {
 
     public void finaAllEventData(){
         List<LogEventEntity> eventEntities = this.logEventRepository.findAll();
+        logger.debug("Total 1 :: {}",eventEntities.size());
         printLogEventData(eventEntities);
     }
 
