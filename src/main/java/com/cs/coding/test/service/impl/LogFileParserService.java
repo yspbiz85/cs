@@ -11,20 +11,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import java.io.IOException;
-import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -41,103 +37,85 @@ public class LogFileParserService implements IFileParserService {
     private final LogEventRepository logEventRepository;
 
     @Autowired
-    LogFileParserService(LogEventRepository logEventRepository){
+    LogFileParserService(LogEventRepository logEventRepository) {
         this.logEventRepository = logEventRepository;
     }
 
-    @Override
-    public void parseFile(String path) {
-        Map<String, LogEventEntity> logEventMap = new ConcurrentHashMap<>();
-        final long startTime = System.nanoTime();
-        long fileSize = 0;
-        logger.debug("Creating the thread pool of the size : {}",FIXED_THREAD_POOL_SIZE);
-        ExecutorService threadPool = Executors.newFixedThreadPool(FIXED_THREAD_POOL_SIZE);
 
-        //Read the content of the file line by line in single thread order reduce the memory consumption
-        logger.debug("Reading the content of the file : {}",path);
-        try(Stream<String> eventLines = Files.lines(Paths.get(path.trim()))) {
-            FileChannel fileChannel = FileChannel.open(Paths.get(path.trim()));
-            fileSize = fileChannel.size();
-            fileChannel.close();
-            eventLines.forEach(eventLine -> {
-                logger.debug("Processing the event line : {}",eventLine);
-                //Delegate the event line to one of the thread pool created above,in order to process the same
-                threadPool.submit(()-> {
-                    try {
-                        ObjectMapper mapper = new ObjectMapper();
-                        LogEventModel logEventModel = mapper.readValue(eventLine.trim(),LogEventModel.class);
-                        LogEventEntity logEventEntity = new LogEventEntity();
-                        if(!CollectionUtils.isEmpty(logEventMap)){
-                            //Check whether there is previous entry present in map for given event id
-                            logEventEntity = logEventMap.get(logEventModel.getId());
-                            if(!ObjectUtils.isEmpty(logEventEntity)){
-                                Long oldTimeStamp = logEventEntity.getEventDuration();
-                                Long duration = oldTimeStamp > logEventModel.getTimestamp() ?
-                                        oldTimeStamp - logEventModel.getTimestamp() : logEventModel.getTimestamp() - oldTimeStamp;
-                                Boolean alert = duration.intValue() > ALERT_FLAG_MAX_TIME;
-                                //Check whether particular log event already there in database
-                                this.logEventRepository.findLogEventByEventId(logEventEntity.getEventId()).map(eventEntity -> {
-                                    eventEntity.setEventType(logEventModel.getType());
-                                    eventEntity.setEventDuration(duration);
-                                    eventEntity.setEventAlert(alert);
-                                    eventEntity.setEventHost(logEventModel.getHost());
-                                    return logEventRepository.save(eventEntity);
-                                }).orElseGet(()->{
-                                    LogEventEntity eventEntity =  new LogEventEntity();
-                                    eventEntity.setEventId(logEventModel.getId());
-                                    eventEntity.setEventType(logEventModel.getType());
-                                    eventEntity.setEventDuration(duration);
-                                    eventEntity.setEventAlert(alert);
-                                    eventEntity.setEventHost(logEventModel.getHost());
-                                    return logEventRepository.save(eventEntity);
-                                });
-                            } else {
-                                logEventEntity = new LogEventEntity();
-                                logEventEntity.setEventId(logEventModel.getId());
-                                logEventEntity.setEventType(logEventModel.getType());
-                                logEventEntity.setEventHost(logEventModel.getHost());
-                                logEventEntity.setEventDuration(logEventModel.getTimestamp());
-                                logEventEntity.setEventAlert(false);
-                                logEventMap.put(logEventModel.getId(),logEventEntity);
-                            }
-                        } else {
-                            logEventEntity.setEventId(logEventModel.getId());
-                            logEventEntity.setEventType(logEventModel.getType());
-                            logEventEntity.setEventHost(logEventModel.getHost());
-                            logEventEntity.setEventDuration(logEventModel.getTimestamp());
-                            logEventMap.put(logEventModel.getId(),logEventEntity);
-                        }
-                    } catch (JsonProcessingException jsonProcessingException) {
-                        logger.error("JsonProcessingException : {}",jsonProcessingException.getMessage());
+    public void parseFile(String path) {
+        ExecutorService producerExecutor = Executors.newFixedThreadPool(2);
+        ExecutorService consumerExecutor = Executors.newFixedThreadPool(2);
+
+        ConcurrentHashMap<String, LogEventEntity> logEventEntityMap = new ConcurrentHashMap<>();
+        LinkedBlockingQueue<LogEventEntity> logEventEntityQueue = new LinkedBlockingQueue<>();
+
+       CompletableFuture.runAsync(() -> {
+        try (Stream<String> logEventLines = Files.lines(Paths.get(path.trim()))) {
+            logEventLines.forEach(logEventLine -> CompletableFuture.runAsync(() -> {
+                //Asynchronously handles the job of parsing the event data.
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    LogEventModel logEventModel = mapper.readValue(logEventLine.trim(), LogEventModel.class);
+                    String eventId = logEventModel.getId();
+                    LogEventEntity logEventEntity = logEventEntityMap.get(eventId);
+                    if(ObjectUtils.isEmpty(logEventEntity)){
+                        logEventEntity = new LogEventEntity();
+                        logEventEntity.setEventId(logEventModel.getId());
+                        logEventEntity.setEventType(logEventModel.getType());
+                        logEventEntity.setEventHost(logEventModel.getHost());
+                        logEventEntity.setEventDuration(logEventModel.getTimestamp());
+                        logEventEntity.setEventAlert(false);
+                        logEventEntityMap.put(logEventModel.getId(),logEventEntity);
+                    } else {
+                        Long oldTimeStamp = logEventEntity.getEventDuration();
+                        Long duration = oldTimeStamp > logEventModel.getTimestamp() ?
+                                oldTimeStamp - logEventModel.getTimestamp() : logEventModel.getTimestamp() - oldTimeStamp;
+                        Boolean alert = duration.intValue() > ALERT_FLAG_MAX_TIME;
+                        logEventEntity.setEventDuration(duration);
+                        logEventEntity.setEventAlert(alert);
+                        logEventEntityQueue.offer(logEventEntity);
                     }
-                });
-            });
+                } catch (JsonProcessingException jsonProcessingException) {
+                    logger.error("JsonProcessingException : {}", jsonProcessingException.getMessage());
+                }
+            }, producerExecutor));
         } catch (IOException ioException) {
-            logger.error("IOException : {}",ioException.getMessage());
-        }
-        threadPool.shutdown();
-        try {
-            boolean isThreadPoolTerminated = threadPool.awaitTermination(10, TimeUnit.SECONDS);
-            logger.debug("isThreadPoolTerminated : {}",isThreadPoolTerminated);
-        } catch (InterruptedException interruptedException) {
-            logger.error("InterruptedException : {}",interruptedException.getMessage());
-        }
-        logger.info("File Path : {} ",path);
-        logger.info("File size : {} ",fileSize);
-        logger.info("Total time required to parse : {}",System.nanoTime() - startTime);
+            logger.error("IOException : {}", ioException.getMessage());
+        }}, producerExecutor);
+
+        CompletableFuture.runAsync(() -> {
+            //Asynchronously handles the job of inserting data into DB.
+            try {
+                while (true) {
+                    LogEventEntity logEventEntity = logEventEntityQueue.take();
+                    //System.out.println("Thread "+Thread.currentThread().getName()+"processing the log event having id "+logEventEntity.getEventId());
+                    this.logEventRepository.save(logEventEntity);
+                    Thread.sleep(200);
+                }
+            } catch (InterruptedException interruptedException) {
+                logger.error("InterruptedException : {}", interruptedException.getMessage());
+            }
+        }, consumerExecutor);
     }
 
-    public void finaAllEventData(){
+    public void finaAllEventData() {
         List<LogEventEntity> eventEntities = this.logEventRepository.findAll();
-        logger.debug("Total 1 :: {}",eventEntities.size());
+        List<LogEventEntity> duplicates = eventEntities.stream()
+                .collect(Collectors.groupingBy(LogEventEntity::getEventId, Collectors.toList()))
+                .values()
+                .stream()
+                .filter(i -> i.size() > 1)
+                .flatMap(Collection::stream)
+                .collect(Collectors.toList());
+        logger.debug("Total  :: {}", duplicates.size());
         printLogEventData(eventEntities);
     }
 
-    public void finaEventById(String eventId){
+    public void finaEventById(String eventId) {
         this.logEventRepository.findLogEventByEventId(eventId).ifPresent(this::printLogEventData);
     }
 
-    public void finaEventByAlert(Boolean eventAlert){
+    public void finaEventByAlert(Boolean eventAlert) {
         List<LogEventEntity> eventEntities = this.logEventRepository.findLogEventByEventAlert(eventAlert);
         printLogEventData(eventEntities);
     }
@@ -146,15 +124,17 @@ public class LogFileParserService implements IFileParserService {
         try {
             ObjectMapper mapper = new ObjectMapper();
             String jsonData = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(data);
-            final String filename = UUID.randomUUID().toString().replace("-", "")+".txt";
-            logger.info("Output data written to file : {}",filename);
-            Files.write(Paths.get(filename),jsonData.getBytes(StandardCharsets.UTF_8));
+            final String filename = UUID.randomUUID().toString().replace("-", "") + ".txt";
+            logger.info("Output data written to file : {}", filename);
+            Files.write(Paths.get(filename), jsonData.getBytes(StandardCharsets.UTF_8));
         } catch (JsonProcessingException jsonProcessingException) {
-            logger.error("JsonProcessingException : {}",jsonProcessingException.getMessage());
+            logger.error("JsonProcessingException : {}", jsonProcessingException.getMessage());
         } catch (IOException ioException) {
-            logger.error("IOException : {}",ioException.getMessage());
+            logger.error("IOException : {}", ioException.getMessage());
         } catch (Exception exception) {
-            logger.error("Internal Error : {}",exception.getMessage());
+            logger.error("Internal Error : {}", exception.getMessage());
         }
     }
+
+
 }
