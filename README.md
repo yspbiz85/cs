@@ -56,12 +56,28 @@ Below are the list of project requirement that are handled in this project
 
         https://github.com/yspbiz85/cs/blob/master/bundle/cs-0.0.1-SNAPSHOT.jar
 
-    2. Execute the jar using command 
+    2. Execute the jar using command. 
 
         java -jar cs-0.0.1-SNAPSHOT.jar
 
-    3. Select the options from menu
-    4. For Generating Dummy Log file,Press 5 (Refer below images)  
-        
-        ![image](img/Dummy1.png)
-        ![image](img/Dummy2.png)
+    3. Select the options from menu as per choice.  
+     
+## Roadmap
+
+- Writing the Junit test cases using mockito
+
+- Improve the multithreading code to handles asynchronous operation 
+  in more elegant way
+
+- Externlize the databse from inmemory db to enterprise db
+  like postgres
+
+- Custom Exception Handling
+
+- Migrate standalone application to REST web application
+
+- Deploy the same over AWS
+
+- Integrate batch processing for file parsing.
+
+- Code Optimization
