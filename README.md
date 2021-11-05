@@ -63,5 +63,5 @@ Below are the list of project requirement that are handled in this project
     3. Select the options from menu
     4. For Generating Dummy Log file,Press 5 (Refer below images)  
         
-        ![](https://github.com/yspbiz85/cs/blob/master/img/Dummy1.png)
-        ![](https://github.com/yspbiz85/cs/blob/master/img/Dummy2.png)
+        ![image](https://raw.githubusercontent.com/yspbiz85/cs/master/img/Dummy1.png)
+        ![image](https://raw.githubusercontent.com/yspbiz85/cs/master/img/Dummy2.png)
