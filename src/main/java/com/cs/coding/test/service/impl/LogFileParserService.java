@@ -90,7 +90,7 @@ public class LogFileParserService implements IFileParserService {
                     LogEventEntity logEventEntity = logEventEntityQueue.take();
                     //System.out.println("Thread "+Thread.currentThread().getName()+"processing the log event having id "+logEventEntity.getEventId());
                     this.logEventRepository.save(logEventEntity);
-                    Thread.sleep(200);
+                    //Thread.sleep(200);
                 }
             } catch (InterruptedException interruptedException) {
                 logger.error("InterruptedException : {}", interruptedException.getMessage());
